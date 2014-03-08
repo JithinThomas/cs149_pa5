@@ -19,10 +19,6 @@
 
 __global__ void cuda_fftx(float *real_image, float *imag_image, int size_x, int size_y)
 {
-  if (threadIdx.x == 0) {
-    printf ("Calling cuda_fftx. size_y = %d", size_y);
-  }
-
   for(unsigned int x = 0; x < size_x; x++)
   {
     //int y = blockDim.x*blockIdx.x + threadIdx.x;
@@ -62,10 +58,6 @@ __global__ void cuda_fftx(float *real_image, float *imag_image, int size_x, int 
 
 __global__ void cuda_ffty(float *real_image, float *imag_image, int size_x, int size_y)
 {
-  if (threadIdx.x == 0) {
-    printf ("Calling cuda_ffty");
-  }
-
   for(unsigned int y = 0; y < size_y; y++)
   {
     int x = threadIdx.x;
@@ -104,10 +96,6 @@ __global__ void cuda_ffty(float *real_image, float *imag_image, int size_x, int 
 
 __global__ void cuda_filter(float *real_image, float *imag_image, int size_x, int size_y)
 {
-  if (threadIdx.x == 0) {
-    printf ("Calling cuda_filter");
-  }
-
   int eightX = size_x/8;
   //int eight7X = size_x - eightX;
   int eightY = size_y/8;
@@ -130,10 +118,6 @@ __global__ void cuda_filter(float *real_image, float *imag_image, int size_x, in
 
 __global__ void cuda_ifftx(float *real_image, float *imag_image, int size_x, int size_y)
 {
-  if (threadIdx.x == 0) {
-    printf ("Calling cuda_ifftx");
-  }
-
   for(unsigned int x = 0; x < size_x; x++)
   {
     int y = threadIdx.x;
@@ -173,10 +157,6 @@ __global__ void cuda_ifftx(float *real_image, float *imag_image, int size_x, int
 
 __global__ void cuda_iffty(float *real_image, float *imag_image, int size_x, int size_y)
 {
-  if (threadIdx.x == 0) {
-    printf ("Calling cuda_iffty");
-  }
-
   for(unsigned int y = 0; y < size_y; y++)
   {
     int x = threadIdx.x;
