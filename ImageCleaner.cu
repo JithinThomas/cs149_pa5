@@ -104,13 +104,13 @@ __global__ void cuda_filter(float *real_image, float *imag_image, int size_x, in
   }
 
   int eightX = size_x/8;
-  int eight7X = size_x - eightX;
+  //int eight7X = size_x - eightX;
   int eightY = size_y/8;
   int eight7Y = size_y - eightY;
   int x = threadIdx.x;
   for(unsigned int y = 0; y < size_y; y++)
   {
-    int x = threadIdx.x;
+    //int x = threadIdx.x;
     if(!(x < eightX && y < eightY) &&
           !(x < eightX && y >= eight7Y) &&
           !(x >= eight7Y && y < eightY) &&
