@@ -19,23 +19,19 @@
 
 __global__ void cuda_fftx(float *real_image, float *imag_image, int size_x, int size_y)
 {
+  int y = threadIdx.x;
+  float fft_real[SIZEY];
+  float fft_imag[SIZEY];
+
+  for(unsigned int n = 0; n < size_y; n++)
+  {
+    float term = -2 * PI * y * n / size_y;
+    fft_real[n] = cos(term);
+    fft_imag[n] = sin(term);
+  }
+
   for(unsigned int x = 0; x < size_x; x++)
   {
-    //int y = blockDim.x*blockIdx.x + threadIdx.x;
-    int y = threadIdx.x;
-    // Compute the local values
-    //float *fft_real = new float[size_y];
-    //float *fft_imag = new float[size_y];
-    float fft_real[SIZEY];
-    float fft_imag[SIZEY];
-
-    for(unsigned int n = 0; n < size_y; n++)
-    {
-    	float term = -2 * PI * y * n / size_y;
-    	fft_real[n] = cos(term);
-    	fft_imag[n] = sin(term);
-    }
-
     // Compute the value for this index
     float real_value = 0;
     float imag_value = 0;
@@ -58,22 +54,19 @@ __global__ void cuda_fftx(float *real_image, float *imag_image, int size_x, int 
 
 __global__ void cuda_ffty(float *real_image, float *imag_image, int size_x, int size_y)
 {
+  int x = threadIdx.x;
+  float fft_real[SIZEX];
+  float fft_imag[SIZEX];
+
+  for(unsigned int n = 0; n < size_y; n++)
+  {
+    float term = -2 * PI * x * n / size_x;
+    fft_real[n] = cos(term);
+    fft_imag[n] = sin(term);
+  }
+
   for(unsigned int y = 0; y < size_y; y++)
   {
-    int x = threadIdx.x;
-    // Compute the local values
-    //float *fft_real = new float[size_x];
-    //float *fft_imag = new float[size_x];
-    float fft_real[SIZEX];
-    float fft_imag[SIZEX];
-
-    for(unsigned int n = 0; n < size_y; n++)
-    {
-      float term = -2 * PI * x * n / size_x;
-      fft_real[n] = cos(term);
-      fft_imag[n] = sin(term);
-    }
-
     // Compute the value for this index
     float real_value = 0;
     float imag_value = 0;
@@ -118,23 +111,20 @@ __global__ void cuda_filter(float *real_image, float *imag_image, int size_x, in
 
 __global__ void cuda_ifftx(float *real_image, float *imag_image, int size_x, int size_y)
 {
+  int y = threadIdx.x;
+  float fft_real[SIZEY];
+  float fft_imag[SIZEY];
+
+  for(unsigned int n = 0; n < size_y; n++)
+  {
+    // Note that the negative sign goes away for the term here
+    float term = 2 * PI * y * n / size_y;
+    fft_real[n] = cos(term);
+    fft_imag[n] = sin(term);
+  }
+
   for(unsigned int x = 0; x < size_x; x++)
   {
-    int y = threadIdx.x;
-    // Compute the local values
-    //float *fft_real = new float[size_y];
-    //float *fft_imag = new float[size_y];
-    float fft_real[SIZEY];
-    float fft_imag[SIZEY];
-
-    for(unsigned int n = 0; n < size_y; n++)
-    {
-      // Note that the negative sign goes away for the term here
-      float term = 2 * PI * y * n / size_y;
-      fft_real[n] = cos(term);
-      fft_imag[n] = sin(term);
-    }
-
     // Compute the value for this index
     float real_value = 0;
     float imag_value = 0;
@@ -157,23 +147,20 @@ __global__ void cuda_ifftx(float *real_image, float *imag_image, int size_x, int
 
 __global__ void cuda_iffty(float *real_image, float *imag_image, int size_x, int size_y)
 {
+  int x = threadIdx.x;
+  float fft_real[SIZEX];
+  float fft_imag[SIZEX];
+
+  for(unsigned int n = 0; n < size_y; n++)
+  {
+    // Note that the negative sign goes away for the term
+    float term = 2 * PI * x * n / size_x;
+    fft_real[n] = cos(term);
+    fft_imag[n] = sin(term);
+  }
+
   for(unsigned int y = 0; y < size_y; y++)
   {
-    int x = threadIdx.x;
-    // Compute the local values
-    //float *fft_real = new float[size_x];
-    //float *fft_imag = new float[size_x];
-    float fft_real[SIZEX];
-    float fft_imag[SIZEX];
-
-    for(unsigned int n = 0; n < size_y; n++)
-    {
-      // Note that the negative sign goes away for the term
-      float term = 2 * PI * x * n / size_x;
-      fft_real[n] = cos(term);
-      fft_imag[n] = sin(term);
-    }
-
     // Compute the value for this index
     float real_value = 0;
     float imag_value = 0;
