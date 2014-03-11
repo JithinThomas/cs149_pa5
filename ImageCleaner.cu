@@ -17,7 +17,6 @@
 // BEGIN ADD KERNEL DEFINITIONS
 //----------------------------------------------------------------
 
-///*
 __global__ void cuda_fftx(float *real_image, float *imag_image, int size_x, int size_y)
 {
   int y = threadIdx.x;
@@ -31,66 +30,26 @@ __global__ void cuda_fftx(float *real_image, float *imag_image, int size_x, int 
     fft_imag[n] = sin(term);
   }
 
-  for(unsigned int x = 0; x < size_x; x++)
+  int x = blockIdx.x;
+
+  // Compute the value for this index
+  float real_value = 0;
+  float imag_value = 0;
+  for(unsigned int n = 0; n < size_y; n++)
   {
-    // Compute the value for this index
-    float real_value = 0;
-    float imag_value = 0;
-    for(unsigned int n = 0; n < size_y; n++)
-    {
-    	real_value += (real_image[x*size_x + n] * fft_real[n]) - (imag_image[x*size_x + n] * fft_imag[n]);
-    	imag_value += (imag_image[x*size_x + n] * fft_real[n]) + (real_image[x*size_x + n] * fft_imag[n]);
-    }
-
-    // Reclaim memory
-    delete [] fft_real;
-    delete [] fft_imag;
-
-    __syncthreads();
-    
-    real_image[x*size_x + y] = real_value;
-    imag_image[x*size_x + y] = imag_value;
+    real_value += (real_image[x*size_x + n] * fft_real[n]) - (imag_image[x*size_x + n] * fft_imag[n]);
+    imag_value += (imag_image[x*size_x + n] * fft_real[n]) + (real_image[x*size_x + n] * fft_imag[n]);
   }
+
+  // Reclaim memory
+  delete [] fft_real;
+  delete [] fft_imag;
+
+  __syncthreads();
+  
+  real_image[x*size_x + y] = real_value;
+  imag_image[x*size_x + y] = imag_value;
 }
-//*/
-
-/*
-__global__ void cuda_fftx(float *real_image, float *imag_image, int size_x, int size_y)
-{
-  int x = threadIdx.x;
-
-  for (unsigned int y = 0; y < size_y; y++)
-  {
-    __shared__ float fft_real[SIZEY];
-    __shared__ float fft_imag[SIZEY];
-
-    int tmp = threadIdx.x;
-    float term = -2 * PI * y * tmp / size_y;
-    fft_real[tmp] = cos(term);
-    fft_imag[tmp] = sin(term);
-
-    __syncthreads();
-
-    float real_value = 0;
-    float imag_value = 0;
-
-    for(unsigned int n = 0; n < size_y; n++)
-    {
-      real_value += (real_image[x*size_x + n] * fft_real[n]) - (imag_image[x*size_x + n] * fft_imag[n]);
-      imag_value += (imag_image[x*size_x + n] * fft_real[n]) + (real_image[x*size_x + n] * fft_imag[n]);
-    }
-
-    // Reclaim memory
-    //delete [] fft_real;
-    //delete [] fft_imag;
-
-    real_image[x*size_x + y] = real_value;
-    imag_image[x*size_x + y] = imag_value;
-
-    __syncthreads();
-  }
-}
-*/
 
 __global__ void cuda_ffty(float *real_image, float *imag_image, int size_x, int size_y)
 {
@@ -105,26 +64,25 @@ __global__ void cuda_ffty(float *real_image, float *imag_image, int size_x, int 
     fft_imag[n] = sin(term);
   }
 
-  for(unsigned int y = 0; y < size_y; y++)
+  int y = blockIdx.x;
+
+  // Compute the value for this index
+  float real_value = 0;
+  float imag_value = 0;
+  for(unsigned int n = 0; n < size_x; n++)
   {
-    // Compute the value for this index
-    float real_value = 0;
-    float imag_value = 0;
-    for(unsigned int n = 0; n < size_x; n++)
-    {
-      real_value += (real_image[n*size_x + y] * fft_real[n]) - (imag_image[n*size_x + y] * fft_imag[n]);
-      imag_value += (imag_image[n*size_x + y] * fft_real[n]) + (real_image[n*size_x + y] * fft_imag[n]);
-    }
-
-    // Reclaim memory
-    delete [] fft_real;
-    delete [] fft_imag;
-
-    __syncthreads();
-
-    real_image[x*size_x + y] = real_value;
-    imag_image[x*size_x + y] = imag_value;
+    real_value += (real_image[n*size_x + y] * fft_real[n]) - (imag_image[n*size_x + y] * fft_imag[n]);
+    imag_value += (imag_image[n*size_x + y] * fft_real[n]) + (real_image[n*size_x + y] * fft_imag[n]);
   }
+
+  // Reclaim memory
+  delete [] fft_real;
+  delete [] fft_imag;
+
+  __syncthreads();
+
+  real_image[x*size_x + y] = real_value;
+  imag_image[x*size_x + y] = imag_value;
 }
 
 __global__ void cuda_filter(float *real_image, float *imag_image, int size_x, int size_y)
@@ -163,26 +121,25 @@ __global__ void cuda_ifftx(float *real_image, float *imag_image, int size_x, int
     fft_imag[n] = sin(term);
   }
 
-  for(unsigned int x = 0; x < size_x; x++)
+  int x = blockIdx.x;
+
+  // Compute the value for this index
+  float real_value = 0;
+  float imag_value = 0;
+  for(unsigned int n = 0; n < size_y; n++)
   {
-    // Compute the value for this index
-    float real_value = 0;
-    float imag_value = 0;
-    for(unsigned int n = 0; n < size_y; n++)
-    {
-      real_value += (real_image[x*size_x + n] * fft_real[n]) - (imag_image[x*size_x + n] * fft_imag[n]);
-      imag_value += (imag_image[x*size_x + n] * fft_real[n]) + (real_image[x*size_x + n] * fft_imag[n]);
-    }
-
-    // Reclaim memory
-    delete [] fft_real;
-    delete [] fft_imag;
-
-    __syncthreads();
-
-    real_image[x*size_x + y] = real_value/size_y;
-    imag_image[x*size_x + y] = imag_value/size_y;
+    real_value += (real_image[x*size_x + n] * fft_real[n]) - (imag_image[x*size_x + n] * fft_imag[n]);
+    imag_value += (imag_image[x*size_x + n] * fft_real[n]) + (real_image[x*size_x + n] * fft_imag[n]);
   }
+
+  // Reclaim memory
+  delete [] fft_real;
+  delete [] fft_imag;
+
+  __syncthreads();
+
+  real_image[x*size_x + y] = real_value/size_y;
+  imag_image[x*size_x + y] = imag_value/size_y;
 }
 
 __global__ void cuda_iffty(float *real_image, float *imag_image, int size_x, int size_y)
@@ -199,26 +156,25 @@ __global__ void cuda_iffty(float *real_image, float *imag_image, int size_x, int
     fft_imag[n] = sin(term);
   }
 
-  for(unsigned int y = 0; y < size_y; y++)
+  int y = blockIdx.x;
+
+  // Compute the value for this index
+  float real_value = 0;
+  float imag_value = 0;
+  for(unsigned int n = 0; n < size_x; n++)
   {
-    // Compute the value for this index
-    float real_value = 0;
-    float imag_value = 0;
-    for(unsigned int n = 0; n < size_x; n++)
-    {
-      real_value += (real_image[n*size_x + y] * fft_real[n]) - (imag_image[n*size_x + y] * fft_imag[n]);
-      imag_value += (imag_image[n*size_x + y] * fft_real[n]) + (real_image[n*size_x + y] * fft_imag[n]);
-    }
-
-    // Reclaim memory
-    delete [] fft_real;
-    delete [] fft_imag;
-
-    __syncthreads();
-
-    real_image[x*size_x + y] = real_value/size_x;
-    imag_image[x*size_x + y] = imag_value/size_x;
+    real_value += (real_image[n*size_x + y] * fft_real[n]) - (imag_image[n*size_x + y] * fft_imag[n]);
+    imag_value += (imag_image[n*size_x + y] * fft_real[n]) + (real_image[n*size_x + y] * fft_imag[n]);
   }
+
+  // Reclaim memory
+  delete [] fft_real;
+  delete [] fft_imag;
+
+  __syncthreads();
+
+  real_image[x*size_x + y] = real_value/size_x;
+  imag_image[x*size_x + y] = imag_value/size_x;
 }
 
 //----------------------------------------------------------------
@@ -282,13 +238,14 @@ __host__ float filterImage(float *real_image, float *imag_image, int size_x, int
   //
   // Also note that you pass the pointers to the device memory to the kernel call
   //exampleKernel<<<1,128,0,filterStream>>>(device_real,device_imag,size_x,size_y);
+  int numBlocks = SIZEY;
   int numThreadsPerBlock = SIZEY;
 
-  cuda_fftx<<<1,numThreadsPerBlock,0,filterStream>>>(device_real,device_imag,size_x,size_y);
-  cuda_ffty<<<1,numThreadsPerBlock,0,filterStream>>>(device_real,device_imag,size_x,size_y);
-  cuda_filter<<<1,numThreadsPerBlock,0,filterStream>>>(device_real,device_imag,size_x,size_y);
-  cuda_ifftx<<<1,numThreadsPerBlock,0,filterStream>>>(device_real,device_imag,size_x,size_y);
-  cuda_iffty<<<1,numThreadsPerBlock,0,filterStream>>>(device_real,device_imag,size_x,size_y);
+  cuda_fftx<<<numBlocks,numThreadsPerBlock,0,filterStream>>>(device_real,device_imag,size_x,size_y);
+  cuda_ffty<<<numBlocks,numThreadsPerBlock,0,filterStream>>>(device_real,device_imag,size_x,size_y);
+  cuda_filter<<<numBlocks,numThreadsPerBlock,0,filterStream>>>(device_real,device_imag,size_x,size_y);
+  cuda_ifftx<<<numBlocks,numThreadsPerBlock,0,filterStream>>>(device_real,device_imag,size_x,size_y);
+  cuda_iffty<<<numBlocks,numThreadsPerBlock,0,filterStream>>>(device_real,device_imag,size_x,size_y);
 
   //---------------------------------------------------------------- 
   // END ADD KERNEL CALLS
