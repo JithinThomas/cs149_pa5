@@ -17,6 +17,23 @@
 // BEGIN ADD KERNEL DEFINITIONS
 //----------------------------------------------------------------
 
+__device__ float2 compute_fft(float *real_image, float *imag_image, float *fft_real, float *fft_imag, int size) {
+  float real_value = 0;
+  float imag_value = 0;
+
+  for(unsigned int n = 0; n < size; n++)
+  {
+    real_value += (real_image[n] * fft_real[n]) - (imag_image[n] * fft_imag[n]);
+    imag_value += (imag_image[n] * fft_real[n]) + (real_image[n] * fft_imag[n]);
+  }
+
+  float2 result;
+  result.x = real_value;
+  result.y = imag_value;
+
+  return result;
+}
+
 __global__ void cuda_fftx(float *real_image, float *imag_image, int size_x, int size_y)
 {
   int x = blockIdx.x; // each row of the image is processed by a different thread block
@@ -42,21 +59,16 @@ __global__ void cuda_fftx(float *real_image, float *imag_image, int size_x, int 
 
   __syncthreads();
 
-  // Compute the value for this index
-  float real_value = 0;
-  float imag_value = 0;
-  for(unsigned int n = 0; n < size_y; n++)
-  {
-    real_value += (real_image_buf[n] * fft_real[n]) - (imag_image_buf[n] * fft_imag[n]);
-    imag_value += (imag_image_buf[n] * fft_real[n]) + (real_image_buf[n] * fft_imag[n]);
-  }
+  float2 fft = compute_fft(real_image_buf, imag_image_buf, fft_real, fft_imag, size_y);
+  float real_value = fft.x;
+  float imag_value = fft.y;
+  
+  real_image[x*size_x + y] = real_value;
+  imag_image[x*size_x + y] = imag_value;
 
   // Reclaim memory
   delete [] fft_real;
   delete [] fft_imag;
-  
-  real_image[x*size_x + y] = real_value;
-  imag_image[x*size_x + y] = imag_value;
 }
 
 __global__ void cuda_ffty(float *real_image, float *imag_image, int size_x, int size_y)
@@ -84,21 +96,16 @@ __global__ void cuda_ffty(float *real_image, float *imag_image, int size_x, int 
 
   __syncthreads();
 
-  // Compute the value for this index
-  float real_value = 0;
-  float imag_value = 0;
-  for(unsigned int n = 0; n < size_x; n++)
-  {
-    real_value += (real_image_buf[n] * fft_real[n]) - (imag_image_buf[n] * fft_imag[n]);
-    imag_value += (imag_image_buf[n] * fft_real[n]) + (real_image_buf[n] * fft_imag[n]);
-  }
+  float2 fft = compute_fft(real_image_buf, imag_image_buf, fft_real, fft_imag, size_y);
+  float real_value = fft.x;
+  float imag_value = fft.y;
+
+  real_image[x*size_x + y] = real_value;
+  imag_image[x*size_x + y] = imag_value;
 
   // Reclaim memory
   delete [] fft_real;
   delete [] fft_imag;
-
-  real_image[x*size_x + y] = real_value;
-  imag_image[x*size_x + y] = imag_value;
 }
 
 __global__ void cuda_filter(float *real_image, float *imag_image, int size_x, int size_y)
@@ -147,21 +154,16 @@ __global__ void cuda_ifftx(float *real_image, float *imag_image, int size_x, int
 
   __syncthreads();
 
-  // Compute the value for this index
-  float real_value = 0;
-  float imag_value = 0;
-  for(unsigned int n = 0; n < size_y; n++)
-  {
-    real_value += (real_image_buf[n] * fft_real[n]) - (imag_image_buf[n] * fft_imag[n]);
-    imag_value += (imag_image_buf[n] * fft_real[n]) + (real_image_buf[n] * fft_imag[n]);
-  }
+  float2 fft = compute_fft(real_image_buf, imag_image_buf, fft_real, fft_imag, size_y);
+  float real_value = fft.x;
+  float imag_value = fft.y;
+
+  real_image[x*size_x + y] = real_value/size_y;
+  imag_image[x*size_x + y] = imag_value/size_y;
 
   // Reclaim memory
   delete [] fft_real;
   delete [] fft_imag;
-
-  real_image[x*size_x + y] = real_value/size_y;
-  imag_image[x*size_x + y] = imag_value/size_y;
 }
 
 __global__ void cuda_iffty(float *real_image, float *imag_image, int size_x, int size_y)
@@ -190,21 +192,16 @@ __global__ void cuda_iffty(float *real_image, float *imag_image, int size_x, int
 
   __syncthreads();
 
-  // Compute the value for this index
-  float real_value = 0;
-  float imag_value = 0;
-  for(unsigned int n = 0; n < size_x; n++)
-  {
-    real_value += (real_image_buf[n] * fft_real[n]) - (imag_image_buf[n] * fft_imag[n]);
-    imag_value += (imag_image_buf[n] * fft_real[n]) + (real_image_buf[n] * fft_imag[n]);
-  }
+  float2 fft = compute_fft(real_image_buf, imag_image_buf, fft_real, fft_imag, size_y);
+  float real_value = fft.x;
+  float imag_value = fft.y;
+
+  real_image[x*size_x + y] = real_value/size_x;
+  imag_image[x*size_x + y] = imag_value/size_x;
 
   // Reclaim memory
   delete [] fft_real;
   delete [] fft_imag;
-
-  real_image[x*size_x + y] = real_value/size_x;
-  imag_image[x*size_x + y] = imag_value/size_x;
 }
 
 //----------------------------------------------------------------
