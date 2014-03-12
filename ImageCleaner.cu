@@ -54,8 +54,6 @@ __global__ void cuda_fftx(float *real_image, float *imag_image, int size_x, int 
   // Reclaim memory
   delete [] fft_real;
   delete [] fft_imag;
-
-  __syncthreads();
   
   real_image[x*size_x + y] = real_value;
   imag_image[x*size_x + y] = imag_value;
@@ -98,8 +96,6 @@ __global__ void cuda_ffty(float *real_image, float *imag_image, int size_x, int 
   // Reclaim memory
   delete [] fft_real;
   delete [] fft_imag;
-
-  __syncthreads();
 
   real_image[x*size_x + y] = real_value;
   imag_image[x*size_x + y] = imag_value;
@@ -164,8 +160,6 @@ __global__ void cuda_ifftx(float *real_image, float *imag_image, int size_x, int
   delete [] fft_real;
   delete [] fft_imag;
 
-  __syncthreads();
-
   real_image[x*size_x + y] = real_value/size_y;
   imag_image[x*size_x + y] = imag_value/size_y;
 }
@@ -208,8 +202,6 @@ __global__ void cuda_iffty(float *real_image, float *imag_image, int size_x, int
   // Reclaim memory
   delete [] fft_real;
   delete [] fft_imag;
-
-  __syncthreads();
 
   real_image[x*size_x + y] = real_value/size_x;
   imag_image[x*size_x + y] = imag_value/size_x;
