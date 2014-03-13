@@ -28,24 +28,23 @@ __device__ int bit_reverse(int n, int numBits) {
   return b;
 }
 
-__device__ void bit_reverse_copy(float *image, float *image_buf, int stride) {
+__device__ void bit_reverse_copy(float *src_buf, float *dst_buf, int stride) {
   int numBits = (SIZEX == 512)? 9 : 10;
   int destinationIndex = bit_reverse(threadIdx.x, numBits);
-  image_buf[destinationIndex] = image[threadIdx.x * stride];
+  dst_buf[destinationIndex] = src_buf[threadIdx.x * stride];
 }
 
-__device__ void compute_fft_opt(float *input_real, float *input_imag, int size, int stride, int isInverseFFT) {
-  int y = threadIdx.x;
+__device__ void compute_fft(float *real_image, float *imag_image, int size, int stride, int isInverseFFT) {
+  int i = threadIdx.x;
 
   __shared__ float real_image_buf[SIZEX]; // these shared buffers help in reducing the memory latency. Instead of fetching 
   __shared__ float imag_image_buf[SIZEX]; // image pixel data from global memory, the data can now be fetched from shared memory.
 
-  bit_reverse_copy(input_real, real_image_buf, stride);
-  bit_reverse_copy(input_imag, imag_image_buf, stride);
+  bit_reverse_copy(real_image, real_image_buf, stride);
+  bit_reverse_copy(imag_image, imag_image_buf, stride);
 
   __syncthreads();
 
-  int i = threadIdx.x;
   for (unsigned m = 2; m <= size; m = m*2) {
     int tmp = i / m;
     int k = tmp * m;
@@ -53,25 +52,25 @@ __device__ void compute_fft_opt(float *input_real, float *input_imag, int size, 
     tmp = (j % (m/2));
     float sign = (isInverseFFT == 0) ? -1 : 1;
     float exponent =  (sign) * 2 * PI * tmp / m;
-    float fft_real_val = cos(exponent);
-    float fft_imag_val = sin(exponent);
+    float cos_val = cos(exponent);
+    float sin_val = sin(exponent);
 
     int index1 = (j < m/2)? i : i - (m/2);
     int index2 = (j >= m/2)? i : i + (m/2);
 
     float real_value = 0;
     float imag_value = 0;
-    float ar = real_image_buf[index1];
-    float ai = imag_image_buf[index1];
-    float br = real_image_buf[index2];
-    float bi = imag_image_buf[index2];
+    float a_real = real_image_buf[index1];
+    float a_imag = imag_image_buf[index1];
+    float b_real = real_image_buf[index2];
+    float b_imag = imag_image_buf[index2];
 
     if (j < m/2) {
-      real_value = ar + (br * fft_real_val) - (bi * fft_imag_val);
-      imag_value = ai + (bi * fft_real_val) + (br * fft_imag_val);
+      real_value = a_real + (b_real * cos_val) - (b_imag * sin_val);
+      imag_value = a_imag + (b_imag * cos_val) + (b_real * sin_val);
     } else {
-      real_value = ar - (br * fft_real_val) + (bi * fft_imag_val);
-      imag_value = ai - (bi * fft_real_val) - (br * fft_imag_val);
+      real_value = a_real - (b_real * cos_val) + (b_imag * sin_val);
+      imag_value = a_imag - (b_imag * cos_val) - (b_real * sin_val);
     }
 
     __syncthreads();
@@ -87,20 +86,20 @@ __device__ void compute_fft_opt(float *input_real, float *input_imag, int size, 
     imag_image_buf[i] = imag_image_buf[i] / size;
   }
 
-  input_real[y * stride] = real_image_buf[y];
-  input_imag[y * stride] = imag_image_buf[y];
+  real_image[i * stride] = real_image_buf[i];
+  imag_image[i * stride] = imag_image_buf[i];
 }
 
 __global__ void cuda_fftx(float *real_image, float *imag_image, int size_x, int size_y)
 {
   int x = blockIdx.x; // each row of the image is processed by a different thread block
-  compute_fft_opt(&real_image[x*size_x], &imag_image[x*size_x], size_x, 1, 0);
+  compute_fft(&real_image[x*size_x], &imag_image[x*size_x], size_x, 1, 0);
 }
 
 __global__ void cuda_ffty(float *real_image, float *imag_image, int size_x, int size_y)
 {
   int y = blockIdx.x; // each column is processed by a different thread block.
-  compute_fft_opt(&real_image[y], &imag_image[y], size_x, size_x, 0);
+  compute_fft(&real_image[y], &imag_image[y], size_x, size_x, 0);
 }
 
 __global__ void cuda_filter(float *real_image, float *imag_image, int size_x, int size_y)
@@ -125,14 +124,14 @@ __global__ void cuda_filter(float *real_image, float *imag_image, int size_x, in
 
 __global__ void cuda_ifftx(float *real_image, float *imag_image, int size_x, int size_y)
 {
-  int x = blockIdx.x;
-  compute_fft_opt(&real_image[x*size_x], &imag_image[x*size_x], size_x, 1, 1);
+  int x = blockIdx.x; // each row of the image is processed by a different thread block
+  compute_fft(&real_image[x*size_x], &imag_image[x*size_x], size_x, 1, 1);
 }
 
 __global__ void cuda_iffty(float *real_image, float *imag_image, int size_x, int size_y)
 {
-  int y = blockIdx.x;
-  compute_fft_opt(&real_image[y], &imag_image[y], size_x, size_x, 1);
+  int y = blockIdx.x; // each column is processed by a different thread block.
+  compute_fft(&real_image[y], &imag_image[y], size_x, size_x, 1);
 }
 
 //----------------------------------------------------------------
