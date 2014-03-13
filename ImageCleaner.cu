@@ -17,23 +17,6 @@
 // BEGIN ADD KERNEL DEFINITIONS
 //----------------------------------------------------------------
 
-__device__ float2 compute_fft(float *real_image, float *imag_image, float *fft_real, float *fft_imag, int size) {
-  float real_value = 0;
-  float imag_value = 0;
-
-  for(unsigned int n = 0; n < size; n++)
-  {
-    real_value += (real_image[n] * fft_real[n]) - (imag_image[n] * fft_imag[n]);
-    imag_value += (imag_image[n] * fft_real[n]) + (real_image[n] * fft_imag[n]);
-  }
-
-  float2 result;
-  result.x = real_value;
-  result.y = imag_value;
-
-  return result;
-}
-
 __device__ int bit_reverse(int n, int numBits) {
   int b = 0;
   for (int i = 0; i < numBits; i++) {
@@ -51,7 +34,7 @@ __device__ void bit_reverse_copy(float *image, float *image_buf, int stride) {
   image_buf[destinationIndex] = image[threadIdx.x * stride];
 }
 
-__device__ void compute_fft_opt(float *input_real, float *input_imag, int size, int stride) {
+__device__ void compute_fft_opt(float *input_real, float *input_imag, int size, int stride, int isInverseFFT) {
   int y = threadIdx.x;
 
   __shared__ float real_image_buf[SIZEX]; // these shared buffers help in reducing the memory latency. Instead of fetching 
@@ -68,7 +51,8 @@ __device__ void compute_fft_opt(float *input_real, float *input_imag, int size, 
     int k = tmp * m;
     int j = i - k;
     tmp = (j % (m/2));
-    float exponent = -2 * PI * tmp / m;
+    float sign = (isInverseFFT == 0) ? -1 : 1;
+    float exponent =  (sign) * 2 * PI * tmp / m;
     float fft_real_val = cos(exponent);
     float fft_imag_val = sin(exponent);
 
@@ -98,6 +82,11 @@ __device__ void compute_fft_opt(float *input_real, float *input_imag, int size, 
     __syncthreads();
   }
 
+  if (isInverseFFT != 0) {
+    real_image_buf[i] = real_image_buf[i] / size;
+    imag_image_buf[i] = imag_image_buf[i] / size;
+  }
+
   input_real[y * stride] = real_image_buf[y];
   input_imag[y * stride] = imag_image_buf[y];
 }
@@ -105,13 +94,13 @@ __device__ void compute_fft_opt(float *input_real, float *input_imag, int size, 
 __global__ void cuda_fftx(float *real_image, float *imag_image, int size_x, int size_y)
 {
   int x = blockIdx.x; // each row of the image is processed by a different thread block
-  compute_fft_opt(&real_image[x*size_x], &imag_image[x*size_x], size_x, 1);
+  compute_fft_opt(&real_image[x*size_x], &imag_image[x*size_x], size_x, 1, 0);
 }
 
 __global__ void cuda_ffty(float *real_image, float *imag_image, int size_x, int size_y)
 {
   int y = blockIdx.x; // each column is processed by a different thread block.
-  compute_fft_opt(&real_image[y], &imag_image[y], size_x, size_x);
+  compute_fft_opt(&real_image[y], &imag_image[y], size_x, size_x, 0);
 }
 
 __global__ void cuda_filter(float *real_image, float *imag_image, int size_x, int size_y)
@@ -137,146 +126,13 @@ __global__ void cuda_filter(float *real_image, float *imag_image, int size_x, in
 __global__ void cuda_ifftx(float *real_image, float *imag_image, int size_x, int size_y)
 {
   int x = blockIdx.x;
-  int y = threadIdx.x;
-
-  // Populate the buffers in shared memory
-  __shared__ float real_image_buf[SIZEX];
-  __shared__ float imag_image_buf[SIZEX];
-
-  real_image_buf[y] = real_image[x*size_x + y];
-  imag_image_buf[y] = imag_image[x*size_x + y];
-
-  // Compute and store the required the cos/sine values.
-  float fft_real[SIZEY];
-  float fft_imag[SIZEY];
-
-  for(unsigned int n = 0; n < size_y; n++)
-  {
-    // Note that the negative sign goes away for the term here
-    float term = 2 * PI * y * n / size_y;
-    fft_real[n] = cos(term);
-    fft_imag[n] = sin(term);
-  }
-
-  __syncthreads();
-
-  float2 fft = compute_fft(real_image_buf, imag_image_buf, fft_real, fft_imag, size_y);
-  float real_value = fft.x;
-  float imag_value = fft.y;
-
-  real_image[x*size_x + y] = real_value/size_y;
-  imag_image[x*size_x + y] = imag_value/size_y;
-
-  // Reclaim memory
-  delete [] fft_real;
-  delete [] fft_imag;
+  compute_fft_opt(&real_image[x*size_x], &imag_image[x*size_x], size_x, 1, 1);
 }
 
 __global__ void cuda_iffty(float *real_image, float *imag_image, int size_x, int size_y)
 {
   int y = blockIdx.x;
-  int x = threadIdx.x;
-
-  // Populate the buffers in shared memory
-  __shared__ float real_image_buf[SIZEX];
-  __shared__ float imag_image_buf[SIZEX];
-
-  real_image_buf[x] = real_image[x*size_x + y];
-  imag_image_buf[x] = imag_image[x*size_x + y];
-
-  // Compute and store the required the cos/sine values.
-  float fft_real[SIZEX];
-  float fft_imag[SIZEX];
-
-  for(unsigned int n = 0; n < size_y; n++)
-  {
-    // Note that the negative sign goes away for the term
-    float term = 2 * PI * x * n / size_x;
-    fft_real[n] = cos(term);
-    fft_imag[n] = sin(term);
-  }
-
-  __syncthreads();
-
-  float2 fft = compute_fft(real_image_buf, imag_image_buf, fft_real, fft_imag, size_y);
-  float real_value = fft.x;
-  float imag_value = fft.y;
-
-  real_image[x*size_x + y] = real_value/size_x;
-  imag_image[x*size_x + y] = imag_value/size_x;
-
-  // Reclaim memory
-  delete [] fft_real;
-  delete [] fft_imag;
-}
-
-// test function used for debug purposes
-__global__ void test_fft(float *input_real, float *input_imag, int size) {
-  int y = threadIdx.x;
-
-  __shared__ float real_image_buf[SIZEX]; // these shared buffers help in reducing the memory latency. Instead of fetching 
-  __shared__ float imag_image_buf[SIZEX]; // image pixel data from global memory, the data can now be fetched from shared memory.
-
-  //bit_reverse_copy(input_real, real_image_buf);
-  //bit_reverse_copy(input_imag, imag_image_buf);
-  bit_reverse_copy(input_real, real_image_buf, 1);
-  bit_reverse_copy(input_imag, imag_image_buf, 1);
-
-  __syncthreads();
-
-  /*
-  if (y == 0) {
-    printf("Reversed input arrays: \n[");
-    for (int _tmp = 0; _tmp < size; _tmp++) {
-      printf("(%f, %f)", real_image_buf[_tmp], imag_image_buf[_tmp]);
-    }
-
-    printf("]\n");
-  }
-  */
-
-  int i = threadIdx.x;
-  for (unsigned m = 2; m <= size; m = m*2) {
-    int tmp = i / m;
-    int k = tmp * m;
-    int j = i - k;
-    tmp = (j % (m/2));
-    float exponent = -2 * PI * tmp / m;
-    float fft_real_val = cos(exponent);
-    float fft_imag_val = sin(exponent);
-
-    int index1 = (j < m/2)? i : i - (m/2);
-    int index2 = (j >= m/2)? i : i + (m/2);
-
-    if (y == 0) {
-      printf("i: %d, m: %d, index1: %d, index2: %d\n", i, m, index1, index2);
-    }
-
-    float real_value = 0;
-    float imag_value = 0;
-    float ar = real_image_buf[index1];
-    float ai = imag_image_buf[index1];
-    float br = real_image_buf[index2];
-    float bi = imag_image_buf[index2];
-
-    if (j < m/2) {
-      real_value = ar + (br * fft_real_val) - (bi * fft_imag_val);
-      imag_value = ai + (bi * fft_real_val) + (br * fft_imag_val);
-    } else {
-      real_value = ar - (br * fft_real_val) + (bi * fft_imag_val);
-      imag_value = ai - (bi * fft_real_val) - (br * fft_imag_val);
-    }
-
-    __syncthreads();
-
-    real_image_buf[i] = real_value;
-    imag_image_buf[i] = imag_value;
-
-    __syncthreads();
-  }
-
-  input_real[y] = real_image_buf[y];
-  input_imag[y] = imag_image_buf[y];
+  compute_fft_opt(&real_image[y], &imag_image[y], size_x, size_x, 1);
 }
 
 //----------------------------------------------------------------
@@ -308,15 +164,6 @@ __host__ float filterImage(float *real_image, float *imag_image, int size_x, int
   CUDA_ERROR_CHECK(cudaMalloc((void**)&device_real, matSize));
   CUDA_ERROR_CHECK(cudaMalloc((void**)&device_imag, matSize));
 
-
-  int numElems = 4;
-  float *device_real_test, *device_imag_test;
-  int s = numElems * sizeof(float);
-  CUDA_ERROR_CHECK(cudaMalloc((void**)&device_real_test, s));
-  CUDA_ERROR_CHECK(cudaMalloc((void**)&device_imag_test, s));
-
-
-
   // Start timing for transfer down
   CUDA_ERROR_CHECK(cudaEventRecord(start,filterStream));
   
@@ -324,24 +171,6 @@ __host__ float filterImage(float *real_image, float *imag_image, int size_x, int
   CUDA_ERROR_CHECK(cudaMemcpy(device_real,real_image,matSize,cudaMemcpyHostToDevice));
   CUDA_ERROR_CHECK(cudaMemcpy(device_imag,imag_image,matSize,cudaMemcpyHostToDevice));
 
-
-  float arr_real[numElems];
-  arr_real[0] = 2;
-  arr_real[1] = 3;
-  arr_real[2] = 9;
-  arr_real[3] = 5;
-
-  float arr_imag[numElems];
-  arr_imag[0] = 0;
-  arr_imag[1] = 0;
-  arr_imag[2] = 0;
-  arr_imag[3] = 0;
-
-  CUDA_ERROR_CHECK(cudaMemcpy(device_real_test,arr_real,s,cudaMemcpyHostToDevice));
-  CUDA_ERROR_CHECK(cudaMemcpy(device_imag_test,arr_imag,s,cudaMemcpyHostToDevice));
-
-
-  
   // Stop timing for transfer down
   CUDA_ERROR_CHECK(cudaEventRecord(stop,filterStream));
   CUDA_ERROR_CHECK(cudaEventSynchronize(stop));
@@ -370,8 +199,6 @@ __host__ float filterImage(float *real_image, float *imag_image, int size_x, int
   int numBlocks = SIZEY;
   int numThreadsPerBlock = SIZEY;
 
-  //test_fft<<<1,numElems,0,filterStream>>>(device_real_test,device_imag_test,numElems);
-
   cuda_fftx<<<numBlocks,numThreadsPerBlock,0,filterStream>>>(device_real,device_imag,size_x,size_y);
   cuda_ffty<<<numBlocks,numThreadsPerBlock,0,filterStream>>>(device_real,device_imag,size_x,size_y);
   cuda_filter<<<numBlocks,numThreadsPerBlock,0,filterStream>>>(device_real,device_imag,size_x,size_y);
@@ -393,18 +220,6 @@ __host__ float filterImage(float *real_image, float *imag_image, int size_x, int
   // Here is where we copy matrices back from the device 
   CUDA_ERROR_CHECK(cudaMemcpy(real_image,device_real,matSize,cudaMemcpyDeviceToHost));
   CUDA_ERROR_CHECK(cudaMemcpy(imag_image,device_imag,matSize,cudaMemcpyDeviceToHost));
-
-
-  
-  CUDA_ERROR_CHECK(cudaMemcpy(arr_real,device_real_test,s,cudaMemcpyDeviceToHost));
-  CUDA_ERROR_CHECK(cudaMemcpy(arr_imag,device_imag_test,s,cudaMemcpyDeviceToHost));
-
-  /*
-  printf("Output: \n");
-  for (int i = 0; i < numElems; i++) {
-    printf("[%d] re: %f   im: %f\n", i, arr_real[i], arr_imag[i]);
-  }
-  */
 
   // Finish timing for transfer up
   CUDA_ERROR_CHECK(cudaEventRecord(stop,filterStream));
