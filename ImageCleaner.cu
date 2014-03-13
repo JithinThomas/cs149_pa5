@@ -111,42 +111,7 @@ __global__ void cuda_fftx(float *real_image, float *imag_image, int size_x, int 
 __global__ void cuda_ffty(float *real_image, float *imag_image, int size_x, int size_y)
 {
   int y = blockIdx.x; // each column is processed by a different thread block.
-  int x = threadIdx.x; // each row in the column is processed by a different thread within the thread block.
-
-  // Populate the buffers in shared memory
-  __shared__ float real_image_buf[SIZEX];
-  __shared__ float imag_image_buf[SIZEX];
-
-  real_image_buf[x] = real_image[x*size_x + y];
-  imag_image_buf[x] = imag_image[x*size_x + y];
-
-
-  ///*
-
-  // Compute and store the required the cos/sine values.
-  float fft_real[SIZEX];
-  float fft_imag[SIZEX];
-
-  for(unsigned int n = 0; n < size_y; n++)
-  {
-    float term = -2 * PI * x * n / size_x;
-    fft_real[n] = cos(term);
-    fft_imag[n] = sin(term);
-  }
-
-  __syncthreads();
-
-  float2 fft = compute_fft(real_image_buf, imag_image_buf, fft_real, fft_imag, size_y);
-  float real_value = fft.x;
-  float imag_value = fft.y;
-
-  real_image[x*size_x + y] = real_value;
-  imag_image[x*size_x + y] = imag_value;
-
-  // Reclaim memory
-  delete [] fft_real;
-  delete [] fft_imag;
-  //*/
+  compute_fft_opt(&real_image[y], &imag_image[y], size_x, size_x);
 }
 
 __global__ void cuda_filter(float *real_image, float *imag_image, int size_x, int size_y)
