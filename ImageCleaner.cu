@@ -45,7 +45,7 @@ __device__ void compute_fft(float *real_image, float *imag_image, int size, int 
 
   __syncthreads();
 
-  for (unsigned m = 2; m <= size; m = m*2) {
+  for (int m = 2; m <= size; m = m*2) {
     int tmp = i / m;
     int k = tmp * m;
     int j = i - k;
@@ -65,13 +65,9 @@ __device__ void compute_fft(float *real_image, float *imag_image, int size, int 
     float b_real = real_image_buf[index2];
     float b_imag = imag_image_buf[index2];
 
-    if (j < m/2) {
-      real_value = a_real + (b_real * cos_val) - (b_imag * sin_val);
-      imag_value = a_imag + (b_imag * cos_val) + (b_real * sin_val);
-    } else {
-      real_value = a_real - (b_real * cos_val) + (b_imag * sin_val);
-      imag_value = a_imag - (b_imag * cos_val) - (b_real * sin_val);
-    }
+    sign = (j < m/2) ? 1 : -1;
+    real_value = a_real + (sign * ((b_real * cos_val) - (b_imag * sin_val)));
+    imag_value = a_imag + (sign * ((b_imag * cos_val) + (b_real * sin_val)));
 
     __syncthreads();
 
