@@ -8,6 +8,7 @@
 #endif
 
 #define PI  3.14159256
+#define NUM_UNITS_PER_BLOCK 4
 
 //----------------------------------------------------------------
 // TODO:  CREATE NEW KERNELS HERE.  YOU CAN PLACE YOUR CALLS TO
@@ -49,96 +50,118 @@ __device__ void bit_reverse_copy(float *src_buf, float *dst_buf, int stride) {
 //                     down by SIZEX.
 //    * enableFilter : This is enabled only for ffty. It writes out 0 to those cells that would eventually get filtered out by cuda_filter.
 //                     This is an optimization that avoids the need to invoke cuda_filter after computing ffty
-__device__ void compute_fft(float *real_image, float *imag_image, int size, int stride, int isInverseFFT, int enableFilter) {
-  int i = threadIdx.x;
+//
+//============================================================================
+// OPTIMIZATION: Each thread block processes NUM_UNITS_PER_BLOCK rows/columns.
+//============================================================================
 
-  __shared__ float real_image_buf[SIZEX]; // these shared buffers help in reducing the memory latency. Instead of fetching 
-  __shared__ float imag_image_buf[SIZEX]; // image pixel data from global memory, the data can now be fetched from shared memory.
+__device__ void compute_fft(float *real_image, float *imag_image, int size, int stride, int isInverseFFT, int enableFilter) {
+  int tid = threadIdx.x;
+
+  __shared__ float real_image_buf[NUM_UNITS_PER_BLOCK][SIZEX]; // these shared buffers help in reducing the memory latency. Instead of fetching 
+  __shared__ float imag_image_buf[NUM_UNITS_PER_BLOCK][SIZEX]; // image pixel data from global memory, the data can now be fetched from shared memory.
 
   // Shuffle (using bit-reverse algorithm) and copy the input arrays to shared memory
-  bit_reverse_copy(real_image, real_image_buf, stride);
-  bit_reverse_copy(imag_image, imag_image_buf, stride);
+  int dstToNextCell = (stride == 1)? size : 1;
+  for (int i = 0; i < NUM_UNITS_PER_BLOCK; i++) {
+    bit_reverse_copy(&real_image[i * dstToNextCell], real_image_buf[i], stride);
+    bit_reverse_copy(&imag_image[i * dstToNextCell], imag_image_buf[i], stride);
+  }
 
   // Shared variable to store precomputed sine/cosine values. This helps a lot since a lot of the cosine/sine computations are repeated.
   __shared__ float cos_arr[SIZEX];
   __shared__ float sin_arr[SIZEX];
 
   // Each thread computes one sine/cosine value. For an input array of size SIZEX, sine/cosine for (SIZEX - 1) distinct exponents are used by the algorithm
-  float a = (float)(i + 1);
+  float a = (float)(tid + 1);
   float p = (float)(1 + (int)floor(log2(a)));
   float m_tmp = exp2f(p);
   float tmp_tmp = a - (m_tmp/2);
   float sign = (isInverseFFT == 0) ? -1 : 1;
   float exponent = (sign) * 2 * PI * tmp_tmp / m_tmp;
-  cos_arr[i] = cos(exponent);
-  sin_arr[i] = sin(exponent);
+  cos_arr[tid] = cos(exponent);
+  sin_arr[tid] = sin(exponent);
 
-  __syncthreads();
+  __syncthreads();  
+
+  // Each thread block processes NUM_UNITS_PER_BLOCK rows/columns. Hence, each thread processes 4 cells
+  float real_value[NUM_UNITS_PER_BLOCK];
+  float imag_value[NUM_UNITS_PER_BLOCK];
+
+  // variables used within the Cooley-Tukey loop
+  float a_real;
+  float a_imag;
+  float b_real;
+  float b_imag;
 
   // The outer loop that handles the logN steps of the Cooley-Tukey algorithm
   for (int m = 2; m <= size; m = m*2) {
-    int tmp = i / m;
-    int k = tmp * m;
-    int j = i - k;
-    tmp = (j % (m/2));
-    int q = (m/2) + tmp - 1;
+    int i = tid / m;
+    int k = i * m;
+    int j = tid - k;
+    i = (j % (m/2));
+    int q = (m/2) + i - 1;
     float cos_val = cos_arr[q];
     float sin_val = sin_arr[q];
 
     // Compute the indices of the two elements 'u' and 't' that would be used to compute the value for the current cell.
-    int index1 = (j < m/2)? i : i - (m/2);  // 'u'
-    int index2 = (j >= m/2)? i : i + (m/2); // 't'
+    int index1 = (j < m/2)? tid : tid - (m/2);  // 'u'
+    int index2 = (j >= m/2)? tid : tid + (m/2); // 't'
 
-    float real_value = 0;
-    float imag_value = 0;
-    float a_real = real_image_buf[index1];
-    float a_imag = imag_image_buf[index1];
-    float b_real = real_image_buf[index2];
-    float b_imag = imag_image_buf[index2];
+    for (int i = 0; i < NUM_UNITS_PER_BLOCK; i++) {
+      a_real = real_image_buf[i][index1];
+      a_imag = imag_image_buf[i][index1];
+      b_real = real_image_buf[i][index2];
+      b_imag = imag_image_buf[i][index2];
 
-    sign = (j < m/2) ? 1 : -1; // depending on whether the current cell is left or right of m/2, we would either compute (u+t) or (u-t) respectively.
-    real_value = a_real + (sign * ((b_real * cos_val) - (b_imag * sin_val)));
-    imag_value = a_imag + (sign * ((b_imag * cos_val) + (b_real * sin_val)));
+      sign = (j < m/2) ? 1 : -1; // depending on whether the current cell is left or right of m/2, we would either compute (u+t) or (u-t) respectively.
+
+      real_value[i] = a_real + (sign * ((b_real * cos_val) - (b_imag * sin_val)));
+      imag_value[i] = a_imag + (sign * ((b_imag * cos_val) + (b_real * sin_val)));
+    }
 
     __syncthreads();
 
-    real_image_buf[i] = real_value;
-    imag_image_buf[i] = imag_value;
+    for (int i = 0; i < NUM_UNITS_PER_BLOCK; i++) {
+      real_image_buf[i][tid] = real_value[i];
+      imag_image_buf[i][tid] = imag_value[i];
+    }
 
     __syncthreads();
   }
 
   // Scale down the final values if computing ifftx/iffty
   if (isInverseFFT != 0) {
-    real_image_buf[i] = real_image_buf[i] / size;
-    imag_image_buf[i] = imag_image_buf[i] / size;
+    for (int i = 0; i < NUM_UNITS_PER_BLOCK; i++) {
+      real_image_buf[i][tid] /= size;
+      imag_image_buf[i][tid] /= size;
+    }
   } 
 
   // Optimization: This avoids the need to call cuda_filter after this function
   //               since the values that would be filtered out written as 0
-  int b = blockIdx.x;
   int eightX = size/8;
   int eightY = size/8;
   int eight7Y = size - eightY;
 
-  int factor = ((enableFilter == 1) && !(b < eightX && i < eightY) && !(b < eightX && i >= eight7Y) && !(b >= eight7Y && i < eightY) && !(b >= eight7Y && i >= eight7Y)) ? 0 : 1;
-  real_image_buf[i] *= factor;
-  imag_image_buf[i] *= factor;
-
-  real_image[i * stride] = real_image_buf[i];
-  imag_image[i * stride] = imag_image_buf[i];
+  for (int i = 0; i < NUM_UNITS_PER_BLOCK; i++) {
+    int b = blockIdx.x * NUM_UNITS_PER_BLOCK + i;
+    int factor = ((enableFilter == 1) && !(b < eightX && tid < eightY) && !(b < eightX && tid >= eight7Y) && !(b >= eight7Y && tid < eightY) && !(b >= eight7Y && tid >= eight7Y)) ? 0 : 1;
+    real_image[tid * stride + i * dstToNextCell] = real_image_buf[i][tid] * factor;
+    imag_image[tid * stride + i * dstToNextCell] = imag_image_buf[i][tid] * factor;
+  }
 }
 
 __global__ void cuda_fftx(float *real_image, float *imag_image, int size_x, int size_y)
 {
   int x = blockIdx.x; // each row of the image is processed by a different thread block
-  compute_fft(&real_image[x*size_x], &imag_image[x*size_x], size_x, 1, 0, 0);
+  compute_fft(&real_image[x * size_x * NUM_UNITS_PER_BLOCK], &imag_image[x * size_x * NUM_UNITS_PER_BLOCK], size_x, 1, 0, 0);
 }
 
 __global__ void cuda_ffty(float *real_image, float *imag_image, int size_x, int size_y)
 {
   int y = blockIdx.x; // each column is processed by a different thread block.
-  compute_fft(&real_image[y], &imag_image[y], size_x, size_x, 0, 1);
+  compute_fft(&real_image[y * NUM_UNITS_PER_BLOCK], &imag_image[y * NUM_UNITS_PER_BLOCK], size_x, size_x, 0, 1);
 }
 
 __global__ void cuda_filter(float *real_image, float *imag_image, int size_x, int size_y)
@@ -164,13 +187,13 @@ __global__ void cuda_filter(float *real_image, float *imag_image, int size_x, in
 __global__ void cuda_ifftx(float *real_image, float *imag_image, int size_x, int size_y)
 {
   int x = blockIdx.x; // each row of the image is processed by a different thread block
-  compute_fft(&real_image[x*size_x], &imag_image[x*size_x], size_x, 1, 1, 0);
+  compute_fft(&real_image[x * size_x * NUM_UNITS_PER_BLOCK], &imag_image[x * size_x * NUM_UNITS_PER_BLOCK], size_x, 1, 1, 0);
 }
 
 __global__ void cuda_iffty(float *real_image, float *imag_image, int size_x, int size_y)
 {
   int y = blockIdx.x; // each column is processed by a different thread block.
-  compute_fft(&real_image[y], &imag_image[y], size_x, size_x, 1, 0);
+  compute_fft(&real_image[y * NUM_UNITS_PER_BLOCK], &imag_image[y * NUM_UNITS_PER_BLOCK], size_x, size_x, 1, 0);
 }
 
 //----------------------------------------------------------------
@@ -234,12 +257,13 @@ __host__ float filterImage(float *real_image, float *imag_image, int size_x, int
   //
   // Also note that you pass the pointers to the device memory to the kernel call
   //exampleKernel<<<1,128,0,filterStream>>>(device_real,device_imag,size_x,size_y);
-  int numBlocks = SIZEY;
+  //int numBlocks = SIZEY;
+  int numBlocks = SIZEY / NUM_UNITS_PER_BLOCK;
   int numThreadsPerBlock = SIZEY;
 
   cuda_fftx<<<numBlocks,numThreadsPerBlock,0,filterStream>>>(device_real,device_imag,size_x,size_y);
   cuda_ffty<<<numBlocks,numThreadsPerBlock,0,filterStream>>>(device_real,device_imag,size_x,size_y);
-  //cuda_filter<<<numBlocks,numThreadsPerBlock,0,filterStream>>>(device_real,device_imag,size_x,size_y);
+  //cuda_filter<<<SIZEY,numThreadsPerBlock,0,filterStream>>>(device_real,device_imag,size_x,size_y);
   cuda_ifftx<<<numBlocks,numThreadsPerBlock,0,filterStream>>>(device_real,device_imag,size_x,size_y);
   cuda_iffty<<<numBlocks,numThreadsPerBlock,0,filterStream>>>(device_real,device_imag,size_x,size_y);
 
