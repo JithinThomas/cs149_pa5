@@ -59,6 +59,18 @@ __device__ void compute_fft(float *real_image, float *imag_image, int size, int 
   bit_reverse_copy(real_image, real_image_buf, stride);
   bit_reverse_copy(imag_image, imag_image_buf, stride);
 
+  __shared__ float cos_arr[SIZEX];
+  __shared__ float sin_arr[SIZEX];
+
+  float a = (float)(i + 1);
+  float p = (float)(1 + (int)floor(log2(a)));
+  float m_tmp = exp2f(p);
+  float tmp_tmp = a - (m_tmp/2);
+  float sign = (isInverseFFT == 0) ? -1 : 1;
+  float exponent = (sign) * 2 * PI * tmp_tmp / m_tmp;
+  cos_arr[i] = cos(exponent);
+  sin_arr[i] = sin(exponent);
+
   __syncthreads();
 
   // The outer loop that handles the logN steps of the Cooley-Tukey algorithm
@@ -67,10 +79,9 @@ __device__ void compute_fft(float *real_image, float *imag_image, int size, int 
     int k = tmp * m;
     int j = i - k;
     tmp = (j % (m/2));
-    float sign = (isInverseFFT == 0) ? -1 : 1; // These statements avoid the need to use 'if' conditionals thus avoiding divergence
-    float exponent =  (sign) * 2 * PI * tmp / m;
-    float cos_val = cos(exponent);  // computing the twiddle factor
-    float sin_val = sin(exponent);
+    int q = (m/2) + tmp - 1;
+    float cos_val = cos_arr[q];
+    float sin_val = sin_arr[q];
 
     // Compute the indices of the two elements 'u' and 't' that would be used to compute the value for the current cell.
     int index1 = (j < m/2)? i : i - (m/2);  // 'u'
