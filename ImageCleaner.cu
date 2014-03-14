@@ -59,9 +59,11 @@ __device__ void compute_fft(float *real_image, float *imag_image, int size, int 
   bit_reverse_copy(real_image, real_image_buf, stride);
   bit_reverse_copy(imag_image, imag_image_buf, stride);
 
+  // Shared variable to store precomputed sine/cosine values. This helps a lot since a lot of the cosine/sine computations are repeated.
   __shared__ float cos_arr[SIZEX];
   __shared__ float sin_arr[SIZEX];
 
+  // Each thread computes one sine/cosine value. For an input array of size SIZEX, sine/cosine for (SIZEX - 1) distinct exponents are used by the algorithm
   float a = (float)(i + 1);
   float p = (float)(1 + (int)floor(log2(a)));
   float m_tmp = exp2f(p);
